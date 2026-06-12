@@ -23,7 +23,7 @@ final class StatusItemController: NSObject {
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: iconName, accessibilityDescription: "EarGuard")
             button.imagePosition = .imageLeading
-            button.title = Formatters.duration(today.seconds, compact: true)
+            button.title = Formatters.menuBarDuration(today.seconds)
         }
 
         statusItem.menu = buildMenu()
@@ -43,16 +43,26 @@ final class StatusItemController: NSObject {
         let menu = NSMenu()
         let today = store.today()
         let todayItem = NSMenuItem(
-            title: "Today: \(Formatters.duration(today.seconds))  ·  avg volume \(Formatters.volume(today.averageVolume))",
+            title: "Today: \(Formatters.duration(today.seconds))  ·  avg today \(Formatters.volume(today.averageVolume))",
             action: nil,
             keyEquivalent: ""
         )
         todayItem.isEnabled = false
         menu.addItem(todayItem)
 
-        let nowItem = NSMenuItem(title: "Now: \(monitor.snapshot?.statusText ?? "No output device")", action: nil, keyEquivalent: "")
+        let nowItem = NSMenuItem(title: nowText(), action: nil, keyEquivalent: "")
         nowItem.isEnabled = false
         menu.addItem(nowItem)
+
+        if tracker.isCounting {
+            let sessionItem = NSMenuItem(
+                title: "Current session: \(Formatters.duration(tracker.currentSessionSeconds))",
+                action: nil,
+                keyEquivalent: ""
+            )
+            sessionItem.isEnabled = false
+            menu.addItem(sessionItem)
+        }
 
         menu.addItem(.separator())
         let heading = NSMenuItem(title: "Last 7 days", action: nil, keyEquivalent: "")
@@ -91,6 +101,19 @@ final class StatusItemController: NSObject {
         menu.addItem(quitItem)
 
         return menu
+    }
+
+    private func nowText() -> String {
+        guard let snapshot = monitor.snapshot else {
+            return "Now: No output device"
+        }
+
+        guard snapshot.isHeadphone else {
+            return "Now: No headphones"
+        }
+
+        let state = snapshot.isRunning ? "playing" : "connected, silent"
+        return "Now: \(snapshot.name) (\(state))  ·  current volume \(Formatters.volume(snapshot.volume))"
     }
 
     private func bar(for seconds: TimeInterval, max maximum: TimeInterval) -> String {

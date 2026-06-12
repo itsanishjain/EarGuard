@@ -10,6 +10,7 @@ final class ListeningTracker {
     private let notifier: Notifier
     private var tickTimer: Timer?
     private var currentDeviceName: String?
+    private var sessionStartedAt: Date?
     private var lastSampleDate: Date?
 
     var isCounting: Bool {
@@ -22,6 +23,11 @@ final class ListeningTracker {
 
     var loudSecondsInWindow: TimeInterval {
         exposureModel.loudSecondsInWindow()
+    }
+
+    var currentSessionSeconds: TimeInterval {
+        guard let sessionStartedAt else { return 0 }
+        return Date().timeIntervalSince(sessionStartedAt)
     }
 
     init(monitor: AudioDeviceMonitor, store: Store, exposureModel: ExposureModel, notifier: Notifier) {
@@ -79,6 +85,7 @@ final class ListeningTracker {
 
     private func openSession(deviceName: String, at date: Date) {
         currentDeviceName = deviceName
+        sessionStartedAt = date
         lastSampleDate = date
         ensureTimer()
     }
@@ -86,6 +93,7 @@ final class ListeningTracker {
     private func closeSession(at date: Date) {
         sampleThrough(date: date)
         lastSampleDate = nil
+        sessionStartedAt = nil
         currentDeviceName = nil
         tickTimer?.invalidate()
         tickTimer = nil

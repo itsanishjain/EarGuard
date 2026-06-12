@@ -174,11 +174,11 @@ final class AudioDeviceMonitor {
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
-        var name: CFString?
-        var size = UInt32(MemoryLayout<CFString?>.size)
-        let status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &name)
-        guard status == noErr, let name else { return nil }
-        return name as String
+        var unmanagedName: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        let status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &unmanagedName)
+        guard status == noErr, let unmanagedName else { return nil }
+        return unmanagedName.takeRetainedValue() as String
     }
 
     private func uint32Property(

@@ -78,18 +78,29 @@ struct HistoryFile: Codable {
 }
 
 enum Formatters {
-    static func duration(_ seconds: TimeInterval, compact: Bool = false) -> String {
+    static func duration(_ seconds: TimeInterval) -> String {
         let totalMinutes = max(0, Int(seconds.rounded(.down)) / 60)
         let hours = totalMinutes / 60
         let minutes = totalMinutes % 60
 
-        if compact {
-            return "\(hours):\(String(format: "%02d", minutes))"
-        }
         if hours == 0 {
             return "\(minutes)m"
         }
         return "\(hours)h \(minutes)m"
+    }
+
+    static func menuBarDuration(_ seconds: TimeInterval) -> String {
+        let totalMinutes = max(0, Int(seconds.rounded(.down)) / 60)
+        let hours = totalMinutes / 60
+        let minutes = totalMinutes % 60
+
+        if totalMinutes < 1 {
+            return "<1m"
+        }
+        if hours == 0 {
+            return "\(minutes)m"
+        }
+        return "\(hours)h \(String(format: "%02d", minutes))m"
     }
 
     static func volume(_ value: Double?) -> String {
