@@ -21,8 +21,8 @@ final class DashboardWindowController {
             let hostingController = NSHostingController(rootView: makeView(model: model))
             let newWindow = NSWindow(contentViewController: hostingController)
             newWindow.title = "EarGuard"
-            newWindow.setContentSize(NSSize(width: 820, height: 560))
-            newWindow.minSize = NSSize(width: 720, height: 500)
+            newWindow.setContentSize(NSSize(width: 1040, height: 620))
+            newWindow.minSize = NSSize(width: 920, height: 540)
             newWindow.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
             newWindow.titlebarAppearsTransparent = true
             newWindow.toolbarStyle = .unified
@@ -73,6 +73,22 @@ struct DashboardModel {
     let deviceState: String
     let launchAtLoginEnabled: Bool
     let days: [DashboardDay]
+    let currentSafeStreak: Int
+    let longestSafeStreak: Int
+    let streakDays: [DashboardStreakDay]
+}
+
+enum DashboardStreakStatus {
+    case unknown
+    case restDay
+    case safeListening
+    case loudBreak
+}
+
+struct DashboardStreakDay: Identifiable {
+    let id = UUID()
+    let date: Date
+    let status: DashboardStreakStatus
 }
 
 struct EarGuardDashboardView: View {
@@ -115,6 +131,7 @@ struct EarGuardDashboardView: View {
                 sidebarMetric("Current volume", Formatters.volume(model.currentVolume), "slider.horizontal.3")
                 sidebarMetric("Average today", Formatters.volume(model.averageVolume), "speaker.wave.2")
                 sidebarMetric("Session", model.isCounting ? Formatters.duration(model.currentSessionSeconds) : "--", "waveform")
+                sidebarMetric("Safe streak", "\(model.currentSafeStreak)d", "sparkles")
             }
 
             Spacer()
@@ -162,7 +179,12 @@ struct EarGuardDashboardView: View {
         VStack(alignment: .leading, spacing: 18) {
             header
             currentDeviceSection
-            chartSection
+            HStack(alignment: .top, spacing: 18) {
+                chartSection
+                    .frame(maxWidth: .infinity)
+                streakSection
+                    .frame(width: 300)
+            }
             Spacer(minLength: 0)
         }
         .padding(.top, 28)
@@ -212,6 +234,109 @@ struct EarGuardDashboardView: View {
         }
         .padding(18)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var streakSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\(model.currentSafeStreak) day streak")
+                        .font(.system(size: 20, weight: .semibold))
+                    Text("Safe listening")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Text("Longest \(model.longestSafeStreak)d")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.secondary)
+            }
+
+            Text("A safe day means under 5m at >=75% volume.")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+
+            streakHeatmap
+
+            HStack(spacing: 10) {
+                legendSwatch(.safeListening, "Safe")
+                legendSwatch(.restDay, "Rest")
+                legendSwatch(.loudBreak, "Loud")
+            }
+        }
+        .padding(18)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var streakHeatmap: some View {
+        let rows = ["S", "M", "T", "W", "T", "F", "S"]
+
+        return HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .trailing, spacing: 6) {
+                ForEach(rows.indices, id: \.self) { index in
+                    Text(rows[index])
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(height: 13)
+                }
+            }
+
+            HStack(alignment: .top, spacing: 5) {
+                ForEach(0..<12, id: \.self) { week in
+                    VStack(spacing: 6) {
+                        ForEach(0..<7, id: \.self) { weekday in
+                            let index = week * 7 + weekday
+                            let day = model.streakDays[index]
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(streakColor(day.status))
+                                .frame(width: 13, height: 13)
+                                .help(streakHelp(for: day))
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func legendSwatch(_ status: DashboardStreakStatus, _ label: String) -> some View {
+        HStack(spacing: 5) {
+            RoundedRectangle(cornerRadius: 3)
+                .fill(streakColor(status))
+                .frame(width: 12, height: 12)
+            Text(label)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func streakColor(_ status: DashboardStreakStatus) -> Color {
+        switch status {
+        case .unknown:
+            return Color.secondary.opacity(0.14)
+        case .restDay:
+            return Color.mint.opacity(0.28)
+        case .safeListening:
+            return Color.teal.opacity(0.82)
+        case .loudBreak:
+            return Color.orange.opacity(0.9)
+        }
+    }
+
+    private func streakHelp(for day: DashboardStreakDay) -> String {
+        let label = fullDayLabel.string(from: day.date)
+        switch day.status {
+        case .unknown:
+            return "\(label): no EarGuard history"
+        case .restDay:
+            return "\(label): rest day"
+        case .safeListening:
+            return "\(label): safe listening"
+        case .loudBreak:
+            return "\(label): loud-listening break"
+        }
     }
 
     private var volumeProgress: some View {
@@ -304,6 +429,12 @@ struct EarGuardDashboardView: View {
     private var dayLabel: DateFormatter {
         let formatter = DateFormatter()
         formatter.dateFormat = "E"
+        return formatter
+    }
+
+    private var fullDayLabel: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
         return formatter
     }
 }

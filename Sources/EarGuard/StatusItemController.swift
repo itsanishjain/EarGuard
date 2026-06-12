@@ -136,6 +136,7 @@ final class StatusItemController: NSObject {
         let days = store.lastDays(7).reversed().map {
             DashboardDay(date: $0.0, seconds: $0.1.seconds, averageVolume: $0.1.averageVolume, loudSeconds: $0.1.loudSeconds)
         }
+        let streak = makeStreakSummary()
 
         let deviceName: String
         let deviceState: String
@@ -161,8 +162,72 @@ final class StatusItemController: NSObject {
             deviceName: deviceName,
             deviceState: deviceState,
             launchAtLoginEnabled: launchAtLoginEnabled,
-            days: days
+            days: days,
+            currentSafeStreak: streak.current,
+            longestSafeStreak: streak.longest,
+            streakDays: streak.days
         )
+    }
+
+    private func makeStreakSummary() -> (current: Int, longest: Int, days: [DashboardStreakDay]) {
+        let calendar = Calendar.autoupdatingCurrent
+        let today = calendar.startOfDay(for: Date())
+        let parsedHistory = store.history.days.reduce(into: [Date: DailyAggregate]()) { result, entry in
+            guard let date = Self.historyDateFormatter.date(from: entry.key) else { return }
+            result[calendar.startOfDay(for: date)] = entry.value
+        }
+
+        let firstKnownDay = parsedHistory.keys.min() ?? today
+        let heatmapStart = calendar.date(byAdding: .day, value: -83, to: today) ?? today
+        let streakStart = min(firstKnownDay, today)
+
+        var current = 0
+        var cursor = today
+        while cursor >= streakStart {
+            let aggregate = parsedHistory[cursor] ?? DailyAggregate()
+            guard Self.isSafeDay(aggregate) else { break }
+            current += 1
+            guard let previous = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
+            cursor = previous
+        }
+
+        var longest = 0
+        var running = 0
+        cursor = streakStart
+        while cursor <= today {
+            let aggregate = parsedHistory[cursor] ?? DailyAggregate()
+            if Self.isSafeDay(aggregate) {
+                running += 1
+                longest = max(longest, running)
+            } else {
+                running = 0
+            }
+            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+            cursor = next
+        }
+
+        let heatmapDays: [DashboardStreakDay] = (0..<84).compactMap { offset in
+            guard let date = calendar.date(byAdding: .day, value: offset, to: heatmapStart) else { return nil }
+            let day = calendar.startOfDay(for: date)
+            let aggregate = parsedHistory[day]
+            let status: DashboardStreakStatus
+            if day < firstKnownDay {
+                status = .unknown
+            } else if let aggregate, !Self.isSafeDay(aggregate) {
+                status = .loudBreak
+            } else if let aggregate, aggregate.seconds > 0 {
+                status = .safeListening
+            } else {
+                status = .restDay
+            }
+            return DashboardStreakDay(date: day, status: status)
+        }
+
+        return (current, longest, heatmapDays)
+    }
+
+    private static func isSafeDay(_ aggregate: DailyAggregate) -> Bool {
+        aggregate.loudSeconds < 5 * 60
     }
 
     private var launchAtLoginEnabled: Bool {
@@ -208,6 +273,14 @@ final class StatusItemController: NSObject {
     private let dayFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "EEE MMM d"
+        return formatter
+    }()
+
+    private static let historyDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
         return formatter
     }()
 }
